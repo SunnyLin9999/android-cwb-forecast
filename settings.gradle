@@ -1,0 +1,2 @@
+include ':mvc'
+rootProject.name='android-cwb-forecast'
