@@ -1,2 +1,2 @@
-include ':mvc'
+include ':mvc', ':mvp'
 rootProject.name='android-cwb-forecast'

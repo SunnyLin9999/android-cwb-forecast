@@ -1,4 +1,4 @@
-package com.sunnylinsj.forecastmvc.controller;
+package com.sunnylinsj.forecastmvp.view;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -16,7 +16,6 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
@@ -26,32 +25,25 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.gms.location.LocationListener;
-import com.google.gson.Gson;
-import com.sunnylinsj.forecastmvc.R;
-import com.sunnylinsj.forecastmvc.model.ApiService;
-import com.sunnylinsj.forecastmvc.model.ApiServiceCallback;
-import com.sunnylinsj.forecastmvc.model.WeatherInfo;
-import com.sunnylinsj.forecastmvc.model.data.CwbResponse;
-import com.sunnylinsj.forecastmvc.model.data.WeatherElement;
-
-import org.json.JSONObject;
+import com.sunnylinsj.forecastmvp.R;
+import com.sunnylinsj.forecastmvp.model.WeatherInfo;
+import com.sunnylinsj.forecastmvp.presenter.WeatherPresenter;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
-public class MvcActivity extends AppCompatActivity implements ApiServiceCallback, LocationListener {
+public class MvpActivity extends AppCompatActivity implements WeatherView, LocationListener {
 
-    private static String TAG = MvcActivity.class.getName();
+    private static String TAG = MvpActivity.class.getName();
 
     private static final int MY_PERMISSION_ACCESS_COARSE_LOCATION_REQUEST_RESULT = 1;
+
+    private WeatherPresenter mPresenter;
 
     private EditText mSearchEditText;
     private RecyclerView mRecyclerView;
     private RecyclerView.Adapter mAdapter;
     private RecyclerView.LayoutManager mLayoutManager;
-
-    private ApiService mModel;
 
     private LocationManager mLocationManager;
     private double mLongitude;
@@ -62,7 +54,7 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_mvc);
+        setContentView(R.layout.activity_mvp);
 
         mSearchEditText = findViewById(R.id.search_edit);
         mSearchEditText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -75,7 +67,6 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
                     handled = true;
                 }
                 return handled;
-
             }
         });
 
@@ -85,7 +76,7 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
         mLayoutManager = new LinearLayoutManager(this);
         mRecyclerView.setLayoutManager(mLayoutManager);
 
-        mModel = new ApiService(getApplicationContext());
+        mPresenter = new WeatherPresenter(getApplicationContext(), this);
 
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
@@ -97,7 +88,7 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
 
     private void requestLocationPermission() {
         ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
+                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION },
                 MY_PERMISSION_ACCESS_COARSE_LOCATION_REQUEST_RESULT);
     }
 
@@ -108,29 +99,39 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
 
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-    }
-
-
     @SuppressLint("MissingPermission")
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if(requestCode == MY_PERMISSION_ACCESS_COARSE_LOCATION_REQUEST_RESULT) {
-            switch (requestCode){
-                case MY_PERMISSION_ACCESS_COARSE_LOCATION_REQUEST_RESULT: {
-                    if (grantResults.length > 0 &&
-                            grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                        mLocation = mLocationManager.getLastKnownLocation(mLocationManager.NETWORK_PROVIDER);
-                        onLocationChanged(mLocation);
-                        showForecast();
-                    }
-                    return;
+        switch (requestCode){
+            case MY_PERMISSION_ACCESS_COARSE_LOCATION_REQUEST_RESULT: {
+                if (grantResults.length > 0 &&
+                        grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    mLocation = mLocationManager.getLastKnownLocation(mLocationManager.NETWORK_PROVIDER);
+                    onLocationChanged(mLocation);
+                    showForecast();
                 }
+                return;
             }
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mPresenter.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mPresenter.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mPresenter.onDestroy();
     }
 
     /**
@@ -138,14 +139,13 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
      * 宜蘭縣,花蓮縣,臺東縣,澎湖縣,金門縣,連江縣,臺北市,新北市,
      * 桃園市,臺中市,臺南市,高雄市,基隆市,新竹縣,新竹市,苗栗縣,
      * 彰化縣,南投縣,雲林縣,嘉義縣,嘉義市,屏東縣
-     *
-     * */
+     */
     private void showForecast() {
         String cityname = null;
         String search = mSearchEditText.getText().toString();
 
-        if(search.isEmpty()) {
-            if(mLocation != null) {
+        if (search.isEmpty()) {
+            if (mLocation != null) {
                 cityname = getCurrentCity(mLocation);
             } else {
                 cityname = "臺北市"; //default
@@ -162,88 +162,26 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
 
         getSupportActionBar().setTitle(cityname);
 
-        mModel.fetchData(cityname, this);
+        mPresenter.onSearchClicked(cityname);
     }
 
+    /**
+     * Implements WeatherView
+     */
     @Override
-    protected void onPause() {
-        super.onPause();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-    }
-
-    public void onForecastClicked(View view) {
-        showForecast();
-    }
-
-    //Implement ApiServiceCallback
-    @Override
-    public void onSuccess(JSONObject response) {
-        List<WeatherInfo> infos = new ArrayList<>();
-
-        if (response != null) {
-            Gson gson = new Gson();
-            CwbResponse cwbResponse = gson.fromJson(response.toString(), CwbResponse.class);
-
-            if (cwbResponse.getSuccess()) {
-                String resourceId = cwbResponse.getResult().getResourceId();
-                Log.d(TAG, "resourceId: " + resourceId);
-
-                int locSize = cwbResponse.getRecords().getLocation().length;
-
-                if(locSize > 0) {
-                    WeatherElement[] elements =
-                            cwbResponse.getRecords().getLocation()[0].getWeatherElement();
-                    int timeSize = elements[0].getTime().length;
-
-                    for (int i = 0; i < timeSize; i++) {
-                        Log.d(TAG, "---------------------------------- i=" + i);
-                        WeatherInfo info = new WeatherInfo();
-                        info.setStartTime(elements[0].getTime()[i].getStartTime());
-                        info.setEndTime(elements[0].getTime()[i].getEndTime());
-                        for (WeatherElement element : elements) {
-                            String elementName = element.getElementName();
-                            String parameterName = element.getTime()[i].getParameter().getParameterName();
-                            Log.d(TAG, "i=" + i + ", elementName: " + elementName + ", paramName: " + parameterName);
-                            if (elementName.equals("Wx")) {
-                                info.setWx(parameterName);
-                            } else if (elementName.equals("PoP")) {
-                                info.setPop(parameterName);
-                            } else if (elementName.equals("MinT")) {
-                                info.setMint(parameterName);
-                            } else if (elementName.equals("CI")) {
-                                info.setCi(parameterName);
-                            } else if (elementName.equals("MaxT")) {
-                                info.setMaxt(parameterName);
-                            }
-                        }
-                        infos.add(info);
-                        Log.e(TAG, "---------------------------------- infos s=" + infos.size());
-                    }
-                    for (WeatherInfo info : infos) {
-                        Log.i(TAG, "info wx=" + info.getWx() + " pop=" + info.getPop() +
-                                " mint=" + info.getMint() + " ci=" + info.getCi() + " maxt=" + info.getMaxt() +
-                                ", startTime=" + info.getStartTime() +
-                                ", endTime=" + info.getEndTime());
-                    }
-                }
-            }
-        }
-        mAdapter = new WeatherAdapter(infos);
+    public void setItems(List<WeatherInfo> WeatherInfos) {
+        mAdapter = new WeatherAdapter(WeatherInfos);
         mRecyclerView.setAdapter(mAdapter);
     }
 
-    @Override
-    public void onError(String err) {
-
+    public void onSearchClicked(View view) {
+        showForecast();
     }
+
 
     @Override
     public void onLocationChanged(Location location) {
-        if(location != null) {
+        if (location != null) {
             mLatitude = location.getLatitude();
             mLongitude = location.getLongitude();
             Log.d(TAG, "onLocationChanged Longitude: " + mLatitude);
@@ -260,9 +198,8 @@ public class MvcActivity extends AppCompatActivity implements ApiServiceCallback
 
         } catch (IOException e) {
             e.printStackTrace();
-            Toast.makeText(this, "Error:" + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
-        if(addresses != null) {
+        if (addresses != null) {
             String country = addresses.get(0).getCountryName();
             String city = addresses.get(0).getLocality();
             String state = addresses.get(0).getAdminArea();
